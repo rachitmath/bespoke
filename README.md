@@ -12,7 +12,7 @@ graph LR
     NextJS -->|POST /api/generate| NestJS[NestJS API Server /server]
     NestJS -->|Rate Limiter: ThrottlerGuard 3 req/day| NestJS
     NestJS -->|Secure Server-Side API Call| Gemini[Google Gemini API / 2.5 Flash]
-    Gemini -->|Structured JSON { tailoredResume, outreachMessage }| NestJS
+    Gemini -->|"Structured JSON (tailoredResume, outreachMessage)"| NestJS
     NestJS -->|JSON Response| NextJS
     NextJS -->|Interactive Preview & Copy to Clipboard| User
 ```
