@@ -15,17 +15,17 @@ graph TD
     DB[("PostgreSQL Database (Supabase / Render / Local)")]
     Gemini["Google Gemini 2.5 Flash API"]
 
-    Client -->|1. Sign Up / Log In / Log Out| Server
-    Server -->|2. Issue httpOnly JWT Cookie| Cookie
-    Cookie -->|3. Attached to API requests| Client
-    Client -->|4. POST /api/generate with JWT| Server
-    Server -->|5. MonthlyUsageGuard checks DB count| Prisma
+    Client -->|"1. Sign Up / Log In / Log Out"| Server
+    Server -->|"2. Issue httpOnly JWT Cookie"| Cookie
+    Cookie -->|"3. Attached to API requests"| Client
+    Client -->|"4. POST /api/generate with JWT"| Server
+    Server -->|"5. MonthlyUsageGuard checks DB count"| Prisma
     Prisma --> DB
-    Server -->|6. Server-Side AI Prompt| Gemini
+    Server -->|"6. Server-Side AI Prompt"| Gemini
     Gemini -->|"7. Structured JSON Output"| Server
-    Server -->|8. Persist Generation Record| Prisma
-    Server -->|9. Return Result| Client
-    Client -->|10. GET /api/me (Profile + Stats + History)| Server
+    Server -->|"8. Persist Generation Record"| Prisma
+    Server -->|"9. Return Result"| Client
+    Client -->|"10. GET /api/me (Profile + Stats + History)"| Server
 ```
 
 ---
