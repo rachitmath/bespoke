@@ -10,8 +10,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   const configService = app.get(ConfigService);
-  const port = configService.get<number>('PORT') || 3001;
-  const frontendUrl = configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : configService.get<number>('PORT') || 3001;
+  const frontendUrl = process.env.FRONTEND_URL || configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
 
   // Parse cookies from incoming requests
   app.use(cookieParser());
@@ -60,8 +60,9 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cookie'],
   });
 
-  await app.listen(port);
-  logger.log(`🚀 Bespoke SaaS NestJS API running on: http://localhost:${port}/api`);
+  // Explicitly bind to '0.0.0.0' for Render / cloud container port detection
+  await app.listen(port, '0.0.0.0');
+  logger.log(`🚀 Bespoke SaaS NestJS API running on: http://0.0.0.0:${port}/api`);
   logger.log(`📡 CORS credentials allowed for frontend: ${frontendUrl}`);
 }
 
