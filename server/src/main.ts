@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as cookieParser from 'cookie-parser';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
@@ -11,6 +12,9 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT') || 3001;
   const frontendUrl = configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+
+  // Parse cookies from incoming requests
+  app.use(cookieParser());
 
   // Set global API prefix
   app.setGlobalPrefix('api');
@@ -27,7 +31,7 @@ async function bootstrap() {
     }),
   );
 
-  // Enable CORS
+  // Enable CORS with credentials support for frontend
   app.enableCors({
     origin: (origin, callback) => {
       // Allow requests with no origin (like mobile apps, curl, server-to-server)
@@ -41,7 +45,6 @@ async function bootstrap() {
         'http://127.0.0.1:3001',
       ];
 
-      // Also allow any vercel preview deployment or custom origins configured
       if (
         allowedOrigins.includes(origin) ||
         origin.endsWith('.vercel.app') ||
@@ -54,12 +57,12 @@ async function bootstrap() {
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cookie'],
   });
 
   await app.listen(port);
-  logger.log(`🚀 Bespoke NestJS API server running on: http://localhost:${port}/api`);
-  logger.log(`📡 CORS allowed for: ${frontendUrl}`);
+  logger.log(`🚀 Bespoke SaaS NestJS API running on: http://localhost:${port}/api`);
+  logger.log(`📡 CORS credentials allowed for frontend: ${frontendUrl}`);
 }
 
 bootstrap();

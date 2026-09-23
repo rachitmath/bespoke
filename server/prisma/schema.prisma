@@ -1,0 +1,41 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Plan {
+  FREE
+  PRO
+}
+
+model User {
+  id             String        @id @default(uuid())
+  email          String        @unique
+  hashedPassword String        @map("hashed_password")
+  plan           Plan          @default(FREE)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  generations    Generation[]
+
+  @@map("users")
+}
+
+model Generation {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  jobDescription  String   @map("job_description") @db.Text
+  originalResume  String   @map("original_resume") @db.Text
+  tailoredResume  String   @map("tailored_resume") @db.Text
+  outreachMessage String   @map("outreach_message") @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("generations")
+}

@@ -1,24 +1,42 @@
-# Bespoke — AI Tailored Resume & LinkedIn Outreach Generator
+# Bespoke — Full-Stack AI Resume & LinkedIn Outreach SaaS
 
-**Bespoke** is a modern full-stack web application that helps job seekers instantly transform their standard resume into an ATS-optimized, high-impact resume tailored specifically to any job description, while generating a personalized LinkedIn outreach message to connect with recruiters and hiring managers.
+**Bespoke** is a full-stack SaaS web application designed for job seekers and recruiters. It transforms resumes into ATS-optimized, high-impact resumes tailored specifically to any job description, generates personalized LinkedIn outreach messages, securely saves generation history in a PostgreSQL database, and enforces monthly free tier rate limits.
 
 ---
 
-## 🏛️ Architecture Overview
+## 🏛️ System Architecture
 
 ```mermaid
-graph LR
-    User[User Browser / Client] -->|PDF/TXT Resume & Job Desc| NextJS[Next.js App Router /client]
-    NextJS -->|POST /api/generate| NestJS[NestJS API Server /server]
-    NestJS -->|Rate Limiter: ThrottlerGuard 3 req/day| NestJS
-    NestJS -->|Secure Server-Side API Call| Gemini[Google Gemini API / 2.5 Flash]
-    Gemini -->|"Structured JSON (tailoredResume, outreachMessage)"| NestJS
-    NestJS -->|JSON Response| NextJS
-    NextJS -->|Interactive Preview & Copy to Clipboard| User
+graph TD
+    Client["Next.js 14 App Router /client (/login, /signup, /dashboard, /generate)"]
+    Cookie["httpOnly JWT Cookie"]
+    Server["NestJS SaaS API Server /server"]
+    Prisma["Prisma ORM"]
+    DB[("PostgreSQL Database (Supabase / Render / Local)")]
+    Gemini["Google Gemini 2.5 Flash API"]
+
+    Client -->|1. Sign Up / Log In / Log Out| Server
+    Server -->|2. Issue httpOnly JWT Cookie| Cookie
+    Cookie -->|3. Attached to API requests| Client
+    Client -->|4. POST /api/generate with JWT| Server
+    Server -->|5. MonthlyUsageGuard checks DB count| Prisma
+    Prisma --> DB
+    Server -->|6. Server-Side AI Prompt| Gemini
+    Gemini -->|"7. Structured JSON Output"| Server
+    Server -->|8. Persist Generation Record| Prisma
+    Server -->|9. Return Result| Client
+    Client -->|10. GET /api/me (Profile + Stats + History)| Server
 ```
 
-- **Frontend (`/client`)**: Next.js 14 (App Router), TypeScript, Tailwind CSS, `pdfjs-dist` for client-side PDF/TXT resume text extraction. Zero API keys are stored in the browser.
-- **Backend (`/server`)**: NestJS (TypeScript), `@nestjs/throttler` for IP-based rate limiting (3 requests/day), `class-validator` for DTO validation, `@google/generative-ai` SDK using `GEMINI_API_KEY` from `ConfigModule`, and structured exception handling.
+---
+
+## 🛠️ Tech Stack & Features
+
+- **Frontend (`/client`)**: Next.js 14 (App Router), TypeScript, Tailwind CSS, Lucide icons, `pdfjs-dist` for client-side PDF/TXT resume text parsing.
+- **Backend (`/server`)**: NestJS (TypeScript), Prisma ORM, Passport & JWT authentication with `httpOnly` secure cookies, bcrypt password hashing.
+- **Database**: PostgreSQL (hosted on Supabase, Render, or Docker).
+- **AI Engine**: Google Gemini 2.5 Flash API via `@google/generative-ai` with server-side prompt engineering. Zero API keys in browser.
+- **Rate Limiting**: Database-backed `MonthlyUsageGuard` capping Free plan users to 3 generations per calendar month.
 
 ---
 
@@ -26,12 +44,12 @@ graph LR
 
 ### 1. Prerequisites
 - **Node.js**: v18+ or v20+ (v24 tested)
-- **npm** or **pnpm** / **yarn**
-- A **Google Gemini API Key** (Get free at [Google AI Studio](https://aistudio.google.com/app/apikey))
+- **PostgreSQL**: Local Postgres instance, Docker (`postgres:latest`), or a free [Supabase](https://supabase.com) project.
+- **Google Gemini API Key**: Free at [Google AI Studio](https://aistudio.google.com/app/apikey).
 
 ### 2. Backend Setup (`/server`)
 
-1. Open a terminal and navigate to the server folder:
+1. Open a terminal and navigate to `/server`:
    ```bash
    cd server
    ```
@@ -39,18 +57,24 @@ graph LR
    ```bash
    npm install
    ```
-3. Create your `.env` file from the example:
+3. Copy `.env.example` to `.env`:
    ```bash
    cp .env.example .env
    ```
-4. Edit `.env` and paste your Gemini API key:
+4. Set the environment variables in `.env`:
    ```env
-   GEMINI_API_KEY=your_actual_gemini_api_key
+   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/bespoke_db?schema=public"
+   JWT_SECRET="your-super-secret-jwt-key"
+   GEMINI_API_KEY="your-gemini-api-key"
    PORT=3001
-   FRONTEND_URL=http://localhost:3000
-   GEMINI_MODEL=gemini-2.5-flash
+   FRONTEND_URL="http://localhost:3000"
+   GEMINI_MODEL="gemini-2.5-flash"
    ```
-5. Start the development server:
+5. Push the database schema:
+   ```bash
+   npx prisma db push
+   ```
+6. Start the backend development server:
    ```bash
    npm run start:dev
    ```
@@ -58,7 +82,7 @@ graph LR
 
 ### 3. Frontend Setup (`/client`)
 
-1. Open a second terminal and navigate to the client folder:
+1. Open a second terminal and navigate to `/client`:
    ```bash
    cd client
    ```
@@ -66,65 +90,77 @@ graph LR
    ```bash
    npm install
    ```
-3. (Optional) Create `.env.local` if needed (defaults to `http://localhost:3001`):
+3. Copy `.env.example` to `.env.local`:
+   ```bash
+   cp .env.example .env.local
+   ```
+4. Set `NEXT_PUBLIC_API_URL`:
    ```env
    NEXT_PUBLIC_API_URL=http://localhost:3001
    ```
-4. Start the Next.js development server:
+5. Start the frontend development server:
    ```bash
    npm run dev
    ```
-5. Open your browser and visit `http://localhost:3000`.
+6. Open your browser and navigate to `http://localhost:3000`.
 
 ---
 
 ## ☁️ Production Deployment Guide
 
-### Deploying the Backend (`/server`) to Render (Free Tier)
+### Step 1: Database Setup on Supabase
 
-1. Push your repository to **GitHub** or **GitLab**.
+1. Go to [Supabase](https://supabase.com) and create a free project.
+2. In the Supabase dashboard, go to **Project Settings** -> **Database**.
+3. Under **Connection string**, select **URI** (or Transaction Pooler).
+4. Copy your connection URI (e.g. `postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres`).
+
+---
+
+### Step 2: Deploy Backend (`/server`) to Render
+
+1. Push your repository to **GitHub**.
 2. Go to [Render Dashboard](https://dashboard.render.com/) and click **New +** -> **Web Service**.
 3. Connect your repository.
-4. Configure the service settings:
+4. Configure service settings:
    - **Name**: `bespoke-api`
    - **Root Directory**: `server`
    - **Environment**: `Node`
-   - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `npm run start:prod`
+   - **Build Command**: `npm install && npx prisma generate && npm run build`
+   - **Start Command**: `npx prisma migrate deploy && npm run start:prod` (or `npx prisma db push && npm run start:prod`)
    - **Plan**: `Free`
-5. Under **Environment Variables**, add:
-   - `GEMINI_API_KEY`: *(Your Google Gemini API Key)*
-   - `PORT`: `10000` (or leave default, Render sets `PORT` automatically)
-   - `FRONTEND_URL`: `https://your-bespoke-app.vercel.app` *(Your Vercel frontend URL)*
-6. Click **Deploy Web Service**.
-7. Copy your Render URL (e.g. `https://bespoke-api.onrender.com`).
-
-*(Alternative: You can deploy `/server` to **Railway** by selecting "Deploy from GitHub repo", setting Root Directory to `server`, and adding `GEMINI_API_KEY`).*
+5. Add Environment Variables in Render:
+   - `DATABASE_URL`: *(Your Supabase connection string)*
+   - `JWT_SECRET`: *(A random 32+ character secret string)*
+   - `GEMINI_API_KEY`: *(Your Google AI Studio API key)*
+   - `FRONTEND_URL`: `https://your-bespoke-app.vercel.app` *(Your Vercel URL)*
+   - `PORT`: `10000` (or leave default, Render sets this automatically)
+6. Click **Deploy Web Service** and copy your backend URL (e.g., `https://bespoke-api.onrender.com`).
 
 ---
 
-### Deploying the Frontend (`/client`) to Vercel
+### Step 3: Deploy Frontend (`/client`) to Vercel
 
 1. Go to [Vercel Dashboard](https://vercel.com/) and click **Add New...** -> **Project**.
 2. Import your GitHub repository.
-3. In the project configuration:
-   - **Root Directory**: Click "Edit" and select `client`.
+3. Configure project settings:
+   - **Root Directory**: `client`
    - **Framework Preset**: `Next.js`
-4. Under **Environment Variables**, add:
-   - `NEXT_PUBLIC_API_URL`: `https://bespoke-api.onrender.com` *(The URL of your deployed NestJS backend)*
+4. Add Environment Variable:
+   - `NEXT_PUBLIC_API_URL`: `https://bespoke-api.onrender.com` *(Your Render backend URL)*
 5. Click **Deploy**.
-6. Once deployed, update the `FRONTEND_URL` variable in your Render backend settings to match your new Vercel domain!
+6. Once deployed, update `FRONTEND_URL` in your Render backend settings with your live Vercel domain!
 
 ---
 
-## 🛡️ Security & Rate Limiting
+## 🔒 Security & Privacy Architecture
 
-- **Zero Client-Side Keys**: Frontend never interacts with Gemini API directly. The `GEMINI_API_KEY` is kept safe inside the backend server environment.
-- **Throttling**: `@nestjs/throttler` enforces a max rate limit of 3 requests per 24 hours per IP address to prevent quota exhaustion.
-- **Client UX Limit**: The frontend tracks 3 generations in `localStorage` to give users instant visual feedback with a contact banner.
-- **Input Sanitization**: NestJS `ValidationPipe` with `class-validator` ensures all inputs are strings and meet minimum length requirements.
+- **Zero Browser API Key Exposure**: The Gemini API key is never exposed to the client. All AI generation requests pass through the NestJS backend.
+- **httpOnly Cookies**: JWT authentication tokens are sent and stored strictly in `httpOnly`, `sameSite`, secure cookies to prevent XSS attacks.
+- **Database-Backed Monthly Quotas**: Free accounts are limited to 3 generations per calendar month, enforced by `MonthlyUsageGuard` querying PostgreSQL.
+- **Client-Side PDF Extraction**: Uploaded `.pdf` and `.txt` files are parsed directly in the browser via `pdfjs-dist` without storing raw binary files on the server.
 
 ---
 
 ## 📄 License
-MIT License. Built for job seekers everywhere.
+MIT License.

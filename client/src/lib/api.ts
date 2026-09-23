@@ -1,3 +1,35 @@
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  plan: 'FREE' | 'PRO';
+  createdAt: string;
+}
+
+export interface MonthlyUsage {
+  usedThisMonth: number;
+  monthlyLimit: number | null;
+  remainingThisMonth: number | null;
+}
+
+export interface GenerationRecord {
+  id: string;
+  userId: string;
+  jobDescription: string;
+  originalResume: string;
+  tailoredResume: string;
+  outreachMessage: string;
+  createdAt: string;
+}
+
+export interface MeResponse {
+  user: UserProfile;
+  usage: MonthlyUsage;
+  generations: GenerationRecord[];
+}
+
 export interface GenerateRequestPayload {
   jobDescription: string;
   resume: string;
@@ -8,60 +40,94 @@ export interface GenerateResponsePayload {
   outreachMessage: string;
 }
 
-export interface ApiErrorResponse {
-  success?: boolean;
-  statusCode?: number;
-  error?: string;
-  message?: string | string[];
+export interface AuthResponse {
+  success: boolean;
+  user: UserProfile;
+  token?: string;
+  message?: string;
 }
 
-export async function generateContent(
-  payload: GenerateRequestPayload
-): Promise<GenerateResponsePayload> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-  const endpoint = `${baseUrl.replace(/\/$/, '')}/api/generate`;
+async function request<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const endpoint = `${API_BASE_URL.replace(/\/$/, '')}${path}`;
+  
+  const headers = new Headers(options.headers || {});
+  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
 
-  let response: Response;
+  let res: Response;
   try {
-    response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
+    res = await fetch(endpoint, {
+      ...options,
+      headers,
+      credentials: 'include', // Automatically sends and receives httpOnly auth cookies
     });
-  } catch (error: any) {
+  } catch (err: any) {
     throw new Error(
-      `Unable to reach the Bespoke server at ${baseUrl}. Please ensure the backend is running and CORS is enabled.`
+      `Unable to reach the Bespoke server at ${API_BASE_URL}. Please verify the server is running.`
     );
   }
 
-  if (!response.ok) {
-    let errorData: ApiErrorResponse | null = null;
-    try {
-      errorData = await response.json();
-    } catch {
-      // Non-JSON response
-    }
-
-    if (errorData?.message) {
-      if (Array.isArray(errorData.message)) {
-        throw new Error(errorData.message.join('. '));
-      }
-      throw new Error(errorData.message);
-    }
-
-    if (response.status === 429) {
-      throw new Error(
-        'Daily rate limit exceeded (3 requests/day). Please try again tomorrow or contact support.'
-      );
-    }
-
-    throw new Error(
-      `Server returned an error (${response.status}: ${response.statusText}).`
-    );
+  let data: any;
+  const contentType = res.headers.get('content-type');
+  if (contentType && contentType.includes('application/json')) {
+    data = await res.json();
+  } else {
+    data = await res.text();
   }
 
-  const data = await response.json();
-  return data as GenerateResponsePayload;
+  if (!res.ok) {
+    const message =
+      typeof data === 'object' && data !== null
+        ? Array.isArray(data.message)
+          ? data.message.join('. ')
+          : data.message || data.error || `HTTP ${res.status}: ${res.statusText}`
+        : `HTTP ${res.status}: ${res.statusText}`;
+
+    const error = new Error(message);
+    (error as any).status = res.status;
+    (error as any).data = data;
+    throw error;
+  }
+
+  return data as T;
 }
+
+export const authApi = {
+  signup: (email: string, password: string): Promise<AuthResponse> =>
+    request<AuthResponse>('/api/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+
+  login: (email: string, password: string): Promise<AuthResponse> =>
+    request<AuthResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+
+  logout: (): Promise<{ success: boolean; message: string }> =>
+    request<{ success: boolean; message: string }>('/api/auth/logout', {
+      method: 'POST',
+    }),
+};
+
+export const usersApi = {
+  getMe: (): Promise<MeResponse> =>
+    request<MeResponse>('/api/me', {
+      method: 'GET',
+    }),
+};
+
+export const generateApi = {
+  generate: (
+    payload: GenerateRequestPayload
+  ): Promise<GenerateResponsePayload> =>
+    request<GenerateResponsePayload>('/api/generate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+};

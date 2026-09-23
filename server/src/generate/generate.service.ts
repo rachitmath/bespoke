@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { PrismaService } from '../prisma/prisma.service';
 import { GenerateDto, GenerateResponse } from './dto/generate.dto';
 
 @Injectable()
@@ -13,20 +14,23 @@ export class GenerateService {
   private readonly logger = new Logger(GenerateService.name);
   private genAI: GoogleGenerativeAI | null = null;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {
     const apiKey = this.configService.get<string>('GEMINI_API_KEY');
-    if (apiKey && apiKey !== 'your_gemini_api_key_here') {
+    if (apiKey && apiKey !== 'your_gemini_api_key_here' && !apiKey.startsWith('test_') && !apiKey.startsWith('demo')) {
       this.genAI = new GoogleGenerativeAI(apiKey);
     } else {
       this.logger.warn(
-        'GEMINI_API_KEY is not configured or is set to placeholder. Calls to Gemini API will fail until configured.',
+        'GEMINI_API_KEY is not configured with a live key. Running in intelligent demonstration fallback mode until configured.',
       );
     }
   }
 
   private getGenAIClient(): GoogleGenerativeAI | null {
     const apiKey = this.configService.get<string>('GEMINI_API_KEY');
-    if (!apiKey || apiKey === 'your_gemini_api_key_here' || apiKey === 'test_or_user_key' || apiKey.startsWith('demo')) {
+    if (!apiKey || apiKey === 'your_gemini_api_key_here' || apiKey === 'test_or_user_key' || apiKey.startsWith('test_') || apiKey.startsWith('demo')) {
       return null;
     }
     if (!this.genAI) {
@@ -35,12 +39,18 @@ export class GenerateService {
     return this.genAI;
   }
 
-  async generateTailoredContent(dto: GenerateDto): Promise<GenerateResponse> {
+  async generateTailoredContent(
+    userId: string,
+    dto: GenerateDto,
+  ): Promise<GenerateResponse> {
     const genAI = this.getGenAIClient();
     const modelName =
       this.configService.get<string>('GEMINI_MODEL') || 'gemini-2.5-flash';
 
-    // If a valid live Gemini API key is configured, call Gemini API
+    let tailoredResume = '';
+    let outreachMessage = '';
+
+    // If live Gemini API key is configured, invoke Gemini model
     if (genAI) {
       const systemInstruction = `You are "Bespoke", an expert executive career coach and ATS resume optimizer.
 Your goal is to take a user's existing resume and a target job description, and generate two distinct outputs:
@@ -108,20 +118,18 @@ Generate the tailored resume and LinkedIn outreach message in the requested JSON
           );
         }
 
-        return {
-          tailoredResume: parsed.tailoredResume,
-          outreachMessage: parsed.outreachMessage,
-        };
+        tailoredResume = parsed.tailoredResume;
+        outreachMessage = parsed.outreachMessage;
       } catch (error: any) {
         this.logger.error(`Error in generateTailoredContent: ${error.message}`, error.stack);
-        
+
         if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
           throw error;
         }
 
         if (error.message?.includes('API_KEY_INVALID') || error.status === 400) {
           throw new InternalServerErrorException(
-            'Invalid Gemini API key provided. Please verify your GEMINI_API_KEY in server/.env.',
+            'Invalid Gemini API key provided. Please verify your GEMINI_API_KEY.',
           );
         }
 
@@ -135,64 +143,68 @@ Generate the tailored resume and LinkedIn outreach message in the requested JSON
           `Failed to generate tailored content: ${error.message || 'Unknown error'}`,
         );
       }
-    }
+    } else {
+      // Demo / Testing Fallback
+      this.logger.warn(
+        'GEMINI_API_KEY not configured with live key. Generating tailored demonstration output.',
+      );
 
-    // Demo/Development Mode (when GEMINI_API_KEY is not yet supplied)
-    this.logger.warn('Running in demo mode (GEMINI_API_KEY not set to live key). Returning tailored demonstration assets.');
-    
-    return {
-      tailoredResume: `# Alex Morgan
-**Full-Stack Software Engineer** | alex.morgan@email.com | (555) 234-5678 | San Francisco, CA
-[LinkedIn Profile](https://linkedin.com) • [GitHub Portfolio](https://github.com)
+      tailoredResume = `# Tailored Resume for Target Role
+**Senior Full-Stack Engineer** | Candidate Profile
 
 ---
 
 ## 🎯 Executive Summary
-Results-driven Full-Stack Engineer with 5+ years of hands-on experience building high-throughput microservices, scalable distributed APIs, and high-performance React / Next.js web applications. Proven track record integrating LLMs and generative AI workflows into production systems with 99.98% reliability. Expert in TypeScript, Next.js (App Router), NestJS, and cloud infrastructure.
+Results-driven software engineer with proven expertise aligning directly with the target job requirements. Adept at full-stack architecture, high-throughput backend APIs, and modern responsive frontends.
 
 ---
 
-## 🛠️ Technical Competencies
-- **Core Languages:** TypeScript, JavaScript (ES6+), Python, SQL, HTML5/CSS3
-- **Frontend Architecture:** React 18/19, Next.js (App Router), Tailwind CSS, Redux Toolkit, WebSockets, Responsive UI/UX
-- **Backend & APIs:** NestJS, Node.js, Express, RESTful APIs, GraphQL, Microservices Architecture
-- **Databases & Caching:** PostgreSQL, MongoDB, Redis, Query Optimization, Indexing
-- **AI & Integrations:** Gemini API, LLM Pipelines, Vector Search, Automated Workflows
-- **DevOps & Testing:** Docker, AWS (S3, ECS, Lambda), CI/CD (GitHub Actions), Jest, Cypress
+## 🛠️ Relevant Core Skills
+- **Frontend & Web:** TypeScript, React, Next.js (App Router), Tailwind CSS
+- **Backend & Cloud:** NestJS, Node.js, PostgreSQL, REST APIs, Microservices
+- **System Quality:** Automated CI/CD, Unit/Integration Testing, Performance Profiling
 
 ---
 
-## 💼 Professional Experience
-
-### **Senior Full-Stack Engineer** | DevStream Solutions
-*2022 – Present | San Francisco, CA*
-- **Architected and scaled distributed backend microservices** using **NestJS** and **TypeScript**, reliably handling **2.5M+ daily API transactions** with 99.98% uptime.
-- **Spearheaded Next.js App Router migration**, re-engineering dashboard frontends with **Tailwind CSS** to reduce initial load time by **42%** and achieve top-tier Core Web Vitals.
-- **Integrated generative AI features** via Gemini & LLM endpoints, powering automated summary generation and lifting active team engagement by **35%**.
-- **Designed high-throughput Redis caching layers** and optimized PostgreSQL relational queries, decreasing p95 database response latency by **60%**.
-- Implemented robust security standards including IP throttling, OAuth2/JWT authorization, and zero-downtime CI/CD deployment pipelines on AWS.
-
-### **Full-Stack Developer** | InnovateTech Labs
-*2020 – 2022 | San Francisco, CA*
-- Developed responsive customer-facing web applications using **React**, **TypeScript**, and **Express.js**.
-- Tuned PostgreSQL queries and schema migrations, slashing median endpoint latency from 450ms down to 95ms.
-- Partnered with product and design leads across 2-week Agile sprints to ship 15+ high-priority client features on schedule.
+## 💼 Highlighted Experience
+- **Optimized Core Microservices**: Architected scalable backend services handling high-volume daily requests with sub-100ms response times.
+- **Modernized User Interfaces**: Re-engineered core web applications with Next.js, cutting initial page load times by 40%+.
+- **Engineered Automated Workflows**: Streamlined cross-team productivity through modern API integrations and robust error handling.
 
 ---
 
 ## 🎓 Education & Certifications
-- **Bachelor of Science in Computer Science** — University of California, Davis (2016 – 2020)
-- **AWS Certified Solutions Architect – Associate** (2023)`,
-      outreachMessage: `Hi there,
+- **B.S. in Computer Science** — University of California`;
 
-I noticed your opening for the Senior Full-Stack Engineer role at Nexus Cloud Labs and wanted to reach out.
+      outreachMessage = `Hi there,
 
-With 5+ years building scalable TypeScript microservices (NestJS/Node.js) and high-performance Next.js frontends—along with hands-on experience deploying generative AI workflows to production—I'm confident I can make an immediate impact on your team's upcoming cloud collaboration features.
+I came across the open role on your team and wanted to reach out directly. Given my background building scalable full-stack web applications and microservices, I believe I can hit the ground running and make an immediate impact on your upcoming technical initiatives.
 
-I'd love to learn more about Nexus Cloud Labs' technical roadmap. Would you be open to a brief 10-minute chat sometime this week?
+I would welcome the opportunity to connect for a brief 10-minute chat to learn more about your team's current priorities.
 
-Best regards,
-Alex Morgan`,
+Best regards!`;
+    }
+
+    // Save generation record to PostgreSQL database
+    try {
+      await this.prisma.generation.create({
+        data: {
+          userId,
+          jobDescription: dto.jobDescription,
+          originalResume: dto.resume,
+          tailoredResume,
+          outreachMessage,
+        },
+      });
+      this.logger.log(`Generation successfully persisted to database for user ${userId}.`);
+    } catch (dbError: any) {
+      this.logger.error(`Failed to save generation to database: ${dbError.message}`, dbError.stack);
+      // We still return the generated content even if db save encounters an issue
+    }
+
+    return {
+      tailoredResume,
+      outreachMessage,
     };
   }
 }

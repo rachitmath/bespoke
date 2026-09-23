@@ -1,6 +1,9 @@
 import { Module, Get, Controller } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
 import { GenerateModule } from './generate/generate.module';
 
 @Controller()
@@ -9,7 +12,7 @@ export class AppController {
   healthCheck() {
     return {
       status: 'ok',
-      service: 'Bespoke API',
+      service: 'Bespoke SaaS API',
       timestamp: new Date().toISOString(),
     };
   }
@@ -24,10 +27,13 @@ export class AppController {
     ThrottlerModule.forRoot([
       {
         name: 'default',
-        ttl: 86400000, // 24 hours in milliseconds
-        limit: 3,      // 3 requests per 24 hours per IP
+        ttl: 60000, // 1 minute window for DDoS protection
+        limit: 100,
       },
     ]),
+    PrismaModule,
+    AuthModule,
+    UsersModule,
     GenerateModule,
   ],
   controllers: [AppController],
